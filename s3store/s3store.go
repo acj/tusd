@@ -175,6 +175,7 @@ func (store S3Store) UseIn(composer *tusd.StoreComposer) {
 	composer.UseFinisher(store)
 	composer.UseGetReader(store)
 	composer.UseConcater(store)
+	composer.UseLengthDeferrer(store)
 }
 
 func (store S3Store) NewUpload(info tusd.FileInfo) (id string, err error) {
@@ -564,6 +565,18 @@ func (store S3Store) ConcatUploads(dest string, partialUploads []string) error {
 	}
 
 	return store.FinishUpload(dest)
+}
+
+func (store S3Store) DeclareLength(id string, length int64) error {
+	info, err := store.GetInfo(id)
+	if err != nil {
+		return err
+	}
+	info.Size = length
+	info.SizeIsDeferred = false
+
+	uploadId, _ := splitIds(id)
+	return store.writeInfo(uploadId, info)
 }
 
 func (store S3Store) listAllParts(id string) (parts []*s3.Part, err error) {
