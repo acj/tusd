@@ -341,7 +341,22 @@ func (store S3Store) GetInfo(id string) (info tusd.FileInfo, err error) {
 		}
 	}
 
-	offset := int64(0)
+	partialChunkSize := int64(0)
+	head_res, err := store.Service.HeadObject(&s3.HeadObjectInput{
+		Bucket: aws.String(store.Bucket),
+		Key:    aws.String(uploadId + ".part"),
+	})
+	if err != nil {
+		if !isAwsError(err, "NotFound") {
+			return info, err
+		} else {
+			err = nil
+		}
+	} else {
+		partialChunkSize = *head_res.ContentLength
+	}
+
+	offset := int64(partialChunkSize)
 
 	for _, part := range parts {
 		offset += *part.Size
