@@ -216,23 +216,29 @@ func (store S3Store) NewUpload(info tusd.FileInfo) (id string, err error) {
 	id = uploadId + "+" + *res.UploadId
 	info.ID = id
 
-	infoJson, err := json.Marshal(info)
-	if err != nil {
-		return "", err
-	}
-
-	// Create object on S3 containing information about the file
-	_, err = store.Service.PutObject(&s3.PutObjectInput{
-		Bucket:        aws.String(store.Bucket),
-		Key:           store.pathInBucket(uploadId + ".info"),
-		Body:          bytes.NewReader(infoJson),
-		ContentLength: aws.Int64(int64(len(infoJson))),
-	})
+	err = store.writeInfo(uploadId, info)
 	if err != nil {
 		return "", fmt.Errorf("s3store: unable to create info file:\n%s", err)
 	}
 
 	return id, nil
+}
+
+func (store S3Store) writeInfo(id string, info tusd.FileInfo) error {
+	infoJson, err := json.Marshal(info)
+	if err != nil {
+		return err
+	}
+
+	// Create object on S3 containing information about the file
+	_, err = store.Service.PutObject(&s3.PutObjectInput{
+		Bucket:        aws.String(store.Bucket),
+		Key:           store.pathInBucket(id + ".info"),
+		Body:          bytes.NewReader(infoJson),
+		ContentLength: aws.Int64(int64(len(infoJson))),
+	})
+
+	return err
 }
 
 func (store S3Store) WriteChunk(id string, offset int64, src io.Reader) (int64, error) {
