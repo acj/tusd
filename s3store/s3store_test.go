@@ -202,6 +202,10 @@ func TestGetInfo(t *testing.T) {
 				},
 			},
 		}, nil),
+		s3obj.EXPECT().HeadObject(&s3.HeadObjectInput{
+			Bucket: aws.String("bucket"),
+			Key:    aws.String("uploadId.part"),
+		}).Return(&s3.HeadObjectOutput{}, awserr.New("NotFound", "Not found", nil)),
 	)
 
 	info, err := store.GetInfo("uploadId+multipartId")
@@ -421,6 +425,10 @@ func TestWriteChunk(t *testing.T) {
 				},
 			},
 		}, nil),
+		s3obj.EXPECT().HeadObject(&s3.HeadObjectInput{
+			Bucket: aws.String("bucket"),
+			Key:    aws.String("uploadId.part"),
+		}).Return(&s3.HeadObjectOutput{}, awserr.New("NotFound", "Not found", nil)),
 		s3obj.EXPECT().ListParts(&s3.ListPartsInput{
 			Bucket:           aws.String("bucket"),
 			Key:              aws.String("uploadId"),
@@ -436,6 +444,10 @@ func TestWriteChunk(t *testing.T) {
 				},
 			},
 		}, nil),
+		s3obj.EXPECT().GetObject(&s3.GetObjectInput{
+			Bucket: aws.String("bucket"),
+			Key:    aws.String("uploadId.part"),
+		}).Return(&s3.GetObjectOutput{}, awserr.New("NoSuchKey", "The specified key does not exist.", nil)),
 		s3obj.EXPECT().UploadPart(NewUploadPartInputMatcher(&s3.UploadPartInput{
 			Bucket:     aws.String("bucket"),
 			Key:        aws.String("uploadId"),
@@ -457,16 +469,15 @@ func TestWriteChunk(t *testing.T) {
 			PartNumber: aws.Int64(5),
 			Body:       bytes.NewReader([]byte("90AB")),
 		})).Return(nil, nil),
+		s3obj.EXPECT().PutObject(gomock.Any()).Return(nil, nil),
 	)
 
-	// The last bytes "CD" will be ignored, as they are not the last bytes of the
-	// upload (500 bytes total) and not of full part-size.
 	bytesRead, err := store.WriteChunk("uploadId+multipartId", 300, bytes.NewReader([]byte("1234567890ABCD")))
 	assert.Nil(err)
-	assert.Equal(int64(12), bytesRead)
+	assert.Equal(int64(14), bytesRead)
 }
 
-func TestWriteChunkDropTooSmall(t *testing.T) {
+func TestWriteChunkWriteIncompletePartBecauseTooSmall(t *testing.T) {
 	mockCtrl := gomock.NewController(t)
 	defer mockCtrl.Finish()
 	assert := assert.New(t)
@@ -496,6 +507,10 @@ func TestWriteChunkDropTooSmall(t *testing.T) {
 				},
 			},
 		}, nil),
+		s3obj.EXPECT().HeadObject(&s3.HeadObjectInput{
+			Bucket: aws.String("bucket"),
+			Key:    aws.String("uploadId.part"),
+		}).Return(&s3.HeadObjectOutput{}, awserr.New("NotFound", "Not found", nil)),
 		s3obj.EXPECT().ListParts(&s3.ListPartsInput{
 			Bucket:           aws.String("bucket"),
 			Key:              aws.String("uploadId"),
@@ -511,11 +526,16 @@ func TestWriteChunkDropTooSmall(t *testing.T) {
 				},
 			},
 		}, nil),
+		s3obj.EXPECT().GetObject(&s3.GetObjectInput{
+			Bucket: aws.String("bucket"),
+			Key:    aws.String("uploadId.part"),
+		}).Return(&s3.GetObjectOutput{}, awserr.New("NoSuchKey", "The specified key does not exist.", nil)),
+		s3obj.EXPECT().PutObject(gomock.Any()).Return(nil, nil),
 	)
 
 	bytesRead, err := store.WriteChunk("uploadId+multipartId", 300, bytes.NewReader([]byte("1234567890")))
 	assert.Nil(err)
-	assert.Equal(int64(0), bytesRead)
+	assert.Equal(int64(10), bytesRead)
 }
 
 func TestWriteChunkAllowTooSmallLast(t *testing.T) {
@@ -549,6 +569,10 @@ func TestWriteChunkAllowTooSmallLast(t *testing.T) {
 				},
 			},
 		}, nil),
+		s3obj.EXPECT().HeadObject(&s3.HeadObjectInput{
+			Bucket: aws.String("bucket"),
+			Key:    aws.String("uploadId.part"),
+		}).Return(&s3.HeadObjectOutput{}, awserr.New("NotFound", "Not found", nil)),
 		s3obj.EXPECT().ListParts(&s3.ListPartsInput{
 			Bucket:           aws.String("bucket"),
 			Key:              aws.String("uploadId"),
@@ -564,6 +588,10 @@ func TestWriteChunkAllowTooSmallLast(t *testing.T) {
 				},
 			},
 		}, nil),
+		s3obj.EXPECT().GetObject(&s3.GetObjectInput{
+			Bucket: aws.String("bucket"),
+			Key:    aws.String("uploadId.part"),
+		}).Return(&s3.GetObjectOutput{}, awserr.New("NoSuchKey", "The specified key does not exist.", nil)),
 		s3obj.EXPECT().UploadPart(NewUploadPartInputMatcher(&s3.UploadPartInput{
 			Bucket:     aws.String("bucket"),
 			Key:        aws.String("uploadId"),
