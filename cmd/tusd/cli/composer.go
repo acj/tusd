@@ -26,9 +26,9 @@ func CreateComposer() {
 		s3Config := aws.NewConfig()
 
 		if Flags.S3Endpoint == "" {
-			stdout.Printf("Using 's3://%s' as S3 bucket for storage.\n", Flags.S3Bucket)
+			stdout.Printf("Using 's3://%s%s' as S3 bucket for storage.\n", Flags.S3Bucket, Flags.S3BucketPath)
 		} else {
-			stdout.Printf("Using '%s/%s' as S3 endpoint and bucket for storage.\n", Flags.S3Endpoint, Flags.S3Bucket)
+			stdout.Printf("Using '%s/%s%s' as S3 endpoint and bucket for storage.\n", Flags.S3Endpoint, Flags.S3Bucket, Flags.S3BucketPath)
 
 			s3Config = s3Config.WithEndpoint(Flags.S3Endpoint).WithS3ForcePathStyle(true)
 		}
