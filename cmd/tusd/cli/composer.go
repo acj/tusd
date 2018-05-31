@@ -36,7 +36,7 @@ func CreateComposer() {
 		// Derive credentials from AWS_SECRET_ACCESS_KEY, AWS_ACCESS_KEY_ID and
 		// AWS_REGION environment variables.
 		s3Config = s3Config.WithCredentials(credentials.NewEnvCredentials())
-		store := s3store.New(Flags.S3Bucket, s3.New(session.New(), s3Config))
+		store := s3store.New(Flags.S3Bucket, Flags.S3BucketPath, s3.New(session.New(), s3Config))
 		store.UseIn(Composer)
 
 		locker := memorylocker.New()

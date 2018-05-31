@@ -152,9 +152,10 @@ type S3API interface {
 }
 
 // New constructs a new storage using the supplied bucket and service object.
-func New(bucket string, service S3API) S3Store {
+func New(bucket string, bucketPath string, service S3API) S3Store {
 	return S3Store{
 		Bucket:            bucket,
+		BucketPath:        bucketPath,
 		Service:           service,
 		MaxPartSize:       5 * 1024 * 1024 * 1024,
 		MinPartSize:       5 * 1024 * 1024,
@@ -199,7 +200,7 @@ func (store S3Store) NewUpload(info tusd.FileInfo) (id string, err error) {
 	// Create the actual multipart upload
 	res, err := store.Service.CreateMultipartUpload(&s3.CreateMultipartUploadInput{
 		Bucket:   aws.String(store.Bucket),
-		Key:      aws.String(uploadId),
+		Key:      store.pathInBucket(uploadId),
 		Metadata: metadata,
 	})
 	if err != nil {
@@ -217,7 +218,7 @@ func (store S3Store) NewUpload(info tusd.FileInfo) (id string, err error) {
 	// Create object on S3 containing information about the file
 	_, err = store.Service.PutObject(&s3.PutObjectInput{
 		Bucket:        aws.String(store.Bucket),
-		Key:           aws.String(uploadId + ".info"),
+		Key:           store.pathInBucket(uploadId + ".info"),
 		Body:          bytes.NewReader(infoJson),
 		ContentLength: aws.Int64(int64(len(infoJson))),
 	})
@@ -288,7 +289,7 @@ func (store S3Store) WriteChunk(id string, offset int64, src io.Reader) (int64, 
 
 		_, err = store.Service.UploadPart(&s3.UploadPartInput{
 			Bucket:     aws.String(store.Bucket),
-			Key:        aws.String(uploadId),
+			Key:        store.pathInBucket(uploadId),
 			UploadId:   aws.String(multipartId),
 			PartNumber: aws.Int64(nextPartNum),
 			Body:       file,
@@ -309,7 +310,7 @@ func (store S3Store) GetInfo(id string) (info tusd.FileInfo, err error) {
 	// Get file info stored in separate object
 	res, err := store.Service.GetObject(&s3.GetObjectInput{
 		Bucket: aws.String(store.Bucket),
-		Key:    aws.String(uploadId + ".info"),
+		Key:    store.pathInBucket(uploadId + ".info"),
 	})
 	if err != nil {
 		if isAwsError(err, "NoSuchKey") {
@@ -355,7 +356,7 @@ func (store S3Store) GetReader(id string) (io.Reader, error) {
 	// Attempt to get upload content
 	res, err := store.Service.GetObject(&s3.GetObjectInput{
 		Bucket: aws.String(store.Bucket),
-		Key:    aws.String(uploadId),
+		Key:    store.pathInBucket(uploadId),
 	})
 	if err == nil {
 		// No error occurred, and we are able to stream the object
@@ -373,7 +374,7 @@ func (store S3Store) GetReader(id string) (io.Reader, error) {
 	// never existsted or just has not been finished yet
 	_, err = store.Service.ListParts(&s3.ListPartsInput{
 		Bucket:   aws.String(store.Bucket),
-		Key:      aws.String(uploadId),
+		Key:      store.pathInBucket(uploadId),
 		UploadId: aws.String(multipartId),
 		MaxParts: aws.Int64(0),
 	})
@@ -402,7 +403,7 @@ func (store S3Store) Terminate(id string) error {
 		// Abort the multipart upload
 		_, err := store.Service.AbortMultipartUpload(&s3.AbortMultipartUploadInput{
 			Bucket:   aws.String(store.Bucket),
-			Key:      aws.String(uploadId),
+			Key:      store.pathInBucket(uploadId),
 			UploadId: aws.String(multipartId),
 		})
 		if err != nil && !isAwsError(err, "NoSuchUpload") {
@@ -419,10 +420,10 @@ func (store S3Store) Terminate(id string) error {
 			Delete: &s3.Delete{
 				Objects: []*s3.ObjectIdentifier{
 					{
-						Key: aws.String(uploadId),
+						Key: store.pathInBucket(uploadId),
 					},
 					{
-						Key: aws.String(uploadId + ".info"),
+						Key: store.pathInBucket(uploadId + ".info"),
 					},
 				},
 				Quiet: aws.Bool(true),
@@ -472,7 +473,7 @@ func (store S3Store) FinishUpload(id string) error {
 
 	_, err = store.Service.CompleteMultipartUpload(&s3.CompleteMultipartUploadInput{
 		Bucket:   aws.String(store.Bucket),
-		Key:      aws.String(uploadId),
+		Key:      store.pathInBucket(uploadId),
 		UploadId: aws.String(multipartId),
 		MultipartUpload: &s3.CompletedMultipartUpload{
 			Parts: completedParts,
@@ -499,7 +500,7 @@ func (store S3Store) ConcatUploads(dest string, partialUploads []string) error {
 
 			_, err := store.Service.UploadPartCopy(&s3.UploadPartCopyInput{
 				Bucket:   aws.String(store.Bucket),
-				Key:      aws.String(uploadId),
+				Key:      store.pathInBucket(uploadId),
 				UploadId: aws.String(multipartId),
 				// Part numbers must be in the range of 1 to 10000, inclusive. Since
 				// slice indexes start at 0, we add 1 to ensure that i >= 1.
@@ -530,7 +531,7 @@ func (store S3Store) listAllParts(id string) (parts []*s3.Part, err error) {
 		// Get uploaded parts
 		listPtr, err := store.Service.ListParts(&s3.ListPartsInput{
 			Bucket:           aws.String(store.Bucket),
-			Key:              aws.String(uploadId),
+			Key:              store.pathInBucket(uploadId),
 			UploadId:         aws.String(multipartId),
 			PartNumberMarker: aws.Int64(partMarker),
 		})
@@ -611,4 +612,8 @@ func (store S3Store) calcOptimalPartSize(size int64) (optimalPartSize int64, err
 		return optimalPartSize, fmt.Errorf("calcOptimalPartSize: to upload %v bytes optimalPartSize %v must exceed MaxPartSize %v", size, optimalPartSize, store.MaxPartSize)
 	}
 	return optimalPartSize, nil
+}
+
+func (store S3Store) pathInBucket(filename string) *string {
+	return aws.String(fmt.Sprintf("%s/%s", store.BucketPath, filename))
 }
