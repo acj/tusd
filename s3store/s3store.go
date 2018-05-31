@@ -108,6 +108,8 @@ var nonASCIIRegexp = regexp.MustCompile(`([^\x00-\x7F])`)
 type S3Store struct {
 	// Bucket used to store the data in, e.g. "tusdstore.example.com"
 	Bucket string
+	// Path to a folder in the bucket where data is stored, e.g. "/path/to/my/uploads"
+	BucketPath string
 	// Service specifies an interface used to communicate with the S3 backend.
 	// Usually, this is an instance of github.com/aws/aws-sdk-go/service/s3.S3
 	// (http://docs.aws.amazon.com/sdk-for-go/api/service/s3/S3.html).
