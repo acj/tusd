@@ -3,6 +3,7 @@ package etcd3locker
 
 import (
 	"context"
+	"log"
 	"sync"
 	"time"
 
@@ -24,9 +25,11 @@ type Etcd3Locker struct {
 
 // New constructs a new locker using the provided client.
 func New(client *etcd3.Client) (*Etcd3Locker, error) {
+	log.Println("Creating new Etcd3locker")
 	session, err := concurrency.NewSession(client)
 
 	if err != nil {
+		log.Printf("Error creating Etcd3locker: %v", err.Error())
 		return nil, err
 	}
 
@@ -36,11 +39,13 @@ func New(client *etcd3.Client) (*Etcd3Locker, error) {
 
 // UseIn adds this locker to the passed composer.
 func (locker *Etcd3Locker) UseIn(composer *tusd.StoreComposer) {
+	log.Println("Applying etcd3locker to composer")
 	composer.UseLocker(locker)
 }
 
 // LockUpload tries to obtain the exclusive lock.
 func (locker *Etcd3Locker) LockUpload(id string) error {
+	log.Println("Obtaining Etcd3locker lock")
 	lock := concurrency.NewMutex(locker.Session, "/tusd/"+id)
 
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
@@ -50,13 +55,17 @@ func (locker *Etcd3Locker) LockUpload(id string) error {
 	// the lock is most likely already taken
 	if err := lock.Lock(ctx); err != nil {
 		if err == context.DeadlineExceeded {
+			log.Println("Error exceeded deadline for Etcd3locker lock")
 			return tusd.ErrFileLocked
 		} else {
+			log.Printf("Error obtaining Etcd3locker lock: %v\n", err.Error())
 			return err
 		}
 	}
 
 	locker.mutex.Lock()
+	log.Println("Obtained Etcd3locker lock")
+
 	defer locker.mutex.Unlock()
 	// Only add the lock to our list if the acquire was successful and no error appeared.
 	locker.locks[id] = lock
@@ -66,6 +75,7 @@ func (locker *Etcd3Locker) LockUpload(id string) error {
 
 // UnlockUpload releases a lock. If no such lock exists, no error will be returned.
 func (locker *Etcd3Locker) UnlockUpload(id string) error {
+	log.Println("Releasing Etcd3locker lock")
 	locker.mutex.Lock()
 	defer locker.mutex.Unlock()
 
@@ -73,10 +83,13 @@ func (locker *Etcd3Locker) UnlockUpload(id string) error {
 	// has not been invoked before or UnlockUpload multiple times.
 	lock, ok := locker.locks[id]
 	if !ok {
+		log.Println("Error deleting Etcd3locker lock")
 		return nil
 	}
 
 	defer delete(locker.locks, id)
+
+	log.Println("Released Etcd3locker lock")
 
 	return lock.Unlock(context.Background())
 }
