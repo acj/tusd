@@ -85,11 +85,10 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"io/ioutil"
-	"os"
 	"regexp"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/tus/tusd"
 	"github.com/tus/tusd/uid"
@@ -260,52 +259,54 @@ func (store S3Store) WriteChunk(id string, offset int64, src io.Reader) (int64, 
 	numParts := len(parts)
 	nextPartNum := int64(numParts + 1)
 
-	for {
-		// Create a temporary file to store the part in it
-		file, err := ioutil.TempFile("", "tusd-s3-tmp-")
-		if err != nil {
-			return bytesUploaded, err
-		}
-		defer os.Remove(file.Name())
-		defer file.Close()
+	var wg sync.WaitGroup
 
-		limitedReader := io.LimitReader(src, optimalPartSize)
-		n, err := io.Copy(file, limitedReader)
-		// io.Copy does not return io.EOF, so we not have to handle it differently.
-		if err != nil {
+	for {
+		buffer := make([]byte, optimalPartSize)
+
+		n, err := io.ReadFull(src, buffer)
+		if err != nil && err != io.EOF && err != io.ErrUnexpectedEOF {
+			fmt.Printf("Got error from ReadFull; waiting for buffers: %v\n", err.Error())
+			wg.Wait()
 			return bytesUploaded, err
+		} else {
+			fmt.Printf("Bytes read: %d\n", n)
 		}
 		// If io.Copy is finished reading, it will always return (0, nil).
 		if n == 0 {
+			fmt.Printf("Waiting for buffers")
+			wg.Wait()
+			fmt.Printf("Done")
+
 			return bytesUploaded, nil
 		}
 
-		if !info.SizeIsDeferred {
-			if (size - offset) <= optimalPartSize {
-				if (size - offset) != n {
-					return bytesUploaded, nil
-				}
-			} else if n < optimalPartSize {
-				return bytesUploaded, nil
+		bytesRead := int64(n)
+
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+
+			bufferReader := bytes.NewReader(buffer)
+			startTime := time.Now()
+			_, err := store.Service.UploadPart(&s3.UploadPartInput{
+				Bucket:     aws.String(store.Bucket),
+				Key:        store.pathInBucket(uploadId),
+				UploadId:   aws.String(multipartId),
+				PartNumber: aws.Int64(nextPartNum),
+				Body:       bufferReader,
+			})
+			endTime := time.Since(startTime)
+
+			fmt.Printf("Part upload took %d ms\n", endTime/1e6)
+
+			if err != nil {
+				fmt.Printf("Error uploading part: %v\n", err.Error())
 			}
-		}
+		}()
 
-		// Seek to the beginning of the file
-		file.Seek(0, 0)
-
-		_, err = store.Service.UploadPart(&s3.UploadPartInput{
-			Bucket:     aws.String(store.Bucket),
-			Key:        store.pathInBucket(uploadId),
-			UploadId:   aws.String(multipartId),
-			PartNumber: aws.Int64(nextPartNum),
-			Body:       file,
-		})
-		if err != nil {
-			return bytesUploaded, err
-		}
-
-		offset += n
-		bytesUploaded += n
+		offset += bytesRead
+		bytesUploaded += bytesRead
 		nextPartNum += 1
 	}
 }
