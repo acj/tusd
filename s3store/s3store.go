@@ -86,6 +86,7 @@ import (
 	"fmt"
 	"io"
 	"io/ioutil"
+	"log"
 	"os"
 	"regexp"
 	"strings"
@@ -236,11 +237,13 @@ func (store S3Store) NewUpload(info tusd.FileInfo) (id string, err error) {
 }
 
 func (store S3Store) WriteChunk(id string, offset int64, src io.Reader) (int64, error) {
+	log.Printf("Entering WriteChunk for upload %s with offset %d", id, offset)
 	uploadId, multipartId := splitIds(id)
 
 	// Get the total size of the current upload
 	info, err := store.GetInfo(id)
 	if err != nil {
+		log.Printf("Error 1: %v", err)
 		return 0, err
 	}
 
@@ -248,12 +251,14 @@ func (store S3Store) WriteChunk(id string, offset int64, src io.Reader) (int64, 
 	bytesUploaded := int64(0)
 	optimalPartSize, err := store.calcOptimalPartSize(size)
 	if err != nil {
+		log.Printf("Error 2: %v", err)
 		return bytesUploaded, err
 	}
 
 	// Get number of parts to generate next number
 	parts, err := store.listAllParts(id)
 	if err != nil {
+		log.Printf("Error 3: %v", err)
 		return 0, err
 	}
 
@@ -267,6 +272,7 @@ func (store S3Store) WriteChunk(id string, offset int64, src io.Reader) (int64, 
 		// Create a temporary file to store the part in it
 		file, err := ioutil.TempFile("", "tusd-s3-tmp-")
 		if err != nil {
+			log.Printf("Error 4: %v", err)
 			finishWriteChunk(&wg, errChan, file)
 			return bytesUploaded, err
 		}
@@ -275,6 +281,7 @@ func (store S3Store) WriteChunk(id string, offset int64, src io.Reader) (int64, 
 		n, err := io.Copy(file, limitedReader)
 		// io.Copy does not return io.EOF, so we not have to handle it differently.
 		if err != nil {
+			log.Printf("Error 5: %v", err)
 			finishWriteChunk(&wg, errChan, file)
 			return bytesUploaded, err
 		}
@@ -312,6 +319,7 @@ func (store S3Store) WriteChunk(id string, offset int64, src io.Reader) (int64, 
 			})
 
 			if err != nil {
+				log.Printf("Error 6: %v", err)
 				fmt.Printf("Error uploading part: %v\n", err.Error())
 				errChan <- err
 				return
@@ -335,6 +343,7 @@ func finishWriteChunk(wg *sync.WaitGroup, errChan chan error, lastFile *os.File)
 
 	select {
 	case e := <-errChan:
+		log.Printf("Error 7: %v", e)
 		return e
 	default:
 		return nil
