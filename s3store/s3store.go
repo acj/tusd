@@ -352,6 +352,7 @@ func (store S3Store) getPartialUploadObject(id string) (*s3.GetObjectOutput, err
 	return obj, err
 }
 
+// TODO: Add tags
 func (store S3Store) putPartialUploadObject(id string, file *os.File) error {
 	file.Seek(0, 0)
 	_, err := store.Service.PutObject(&s3.PutObjectInput{
