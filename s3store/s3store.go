@@ -139,6 +139,10 @@ type S3Store struct {
 	// MaxObjectSize is the maximum size an S3 Object can have according to S3
 	// API specifications. See link above.
 	MaxObjectSize int64
+	// IncompleteUploadTag is a tag that is applied to incomplete parts when they
+	// are stored in S3. This mechanism can be used to create an expiration policy
+	// to remove incomplete objects after a period of time.
+	IncompletePartTag string
 }
 
 type S3API interface {
@@ -163,6 +167,7 @@ func New(bucket string, service S3API) S3Store {
 		MinPartSize:       5 * 1024 * 1024,
 		MaxMultipartParts: 10000,
 		MaxObjectSize:     5 * 1024 * 1024 * 1024 * 1024,
+		IncompletePartTag: "TusIncompletePart=true",
 	}
 }
 
