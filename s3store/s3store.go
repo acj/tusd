@@ -578,6 +578,43 @@ func (store S3Store) listAllParts(id string) (parts []*s3.Part, err error) {
 	return parts, nil
 }
 
+func (store S3Store) getIncompletePartForUpload(id string) (*s3.GetObjectOutput, error) {
+	obj, err := store.Service.GetObject(&s3.GetObjectInput{
+		Bucket: aws.String(store.Bucket),
+		Key:    store.keyWithPrefix(id + ".part"),
+	})
+
+	if err != nil && isAwsError(err, s3.ErrCodeNoSuchKey) {
+		return nil, nil
+	}
+
+	return obj, err
+}
+
+func (store S3Store) putIncompletePartForUpload(id string, r io.ReadSeeker) error {
+	_, err := store.Service.PutObject(&s3.PutObjectInput{
+		Bucket:  aws.String(store.Bucket),
+		Key:     store.keyWithPrefix(id + ".part"),
+		Body:    r,
+		Tagging: aws.String(store.IncompletePartTag),
+	})
+	return err
+}
+
+func (store S3Store) deleteIncompletePartForUpload(id string) error {
+	_, err := store.Service.DeleteObjects(&s3.DeleteObjectsInput{
+		Bucket: aws.String(store.Bucket),
+		Delete: &s3.Delete{
+			Objects: []*s3.ObjectIdentifier{
+				{
+					Key: store.keyWithPrefix(id + ".part"),
+				},
+			},
+		},
+	})
+	return err
+}
+
 func splitIds(id string) (uploadId, multipartId string) {
 	index := strings.Index(id, "+")
 	if index == -1 {
