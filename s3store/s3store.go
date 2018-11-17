@@ -60,14 +60,16 @@
 //
 // Therefore, a few special conditions have been implemented:
 //
-// Each PATCH request must contain a body of, at least, 5MB. If the size
-// is smaller than this limit, the entire request will be dropped and not
-// even passed to the storage server. If your server supports a different
-// limit, you can adjust this value using S3Store.MinPartSize.
+// Each PATCH request must contain a body of, at least, 5MB. If your server
+// supports a different limit, you can adjust this value using
+// S3Store.MinPartSize. If the size is smaller than this limit, then the body
+// will be stored in a temporary object in S3. When a subsequent incoming PATCH
+// request is received, the temporary object is fetched and prepended to the
+// request body.
 //
 // When receiving a PATCH request, its body will be temporarily stored on disk.
 // This requirement has been made to ensure the minimum size of a single part
-// and to allow the calculating of a checksum. Once the part has been uploaded
+// and to allow the AWS SDK to calculate a checksum. Once the part has been uploaded
 // to S3, the temporary file will be removed immediately. Therefore, please
 // ensure that the server running this storage backend has enough disk space
 // available to hold these caches.
