@@ -246,19 +246,12 @@ func (store S3Store) writeInfo(id string, info tusd.FileInfo) error {
 }
 
 func (store S3Store) WriteChunk(id string, offset int64, src io.Reader) (int64, error) {
-	uploadId, multipartId := splitIds(id)
+	uploadId, _ := splitIds(id)
 
 	// Get the total size of the current upload
 	info, err := store.GetInfo(id)
 	if err != nil {
 		return 0, err
-	}
-
-	size := info.Size
-	bytesUploaded := int64(0)
-	optimalPartSize, err := store.calcOptimalPartSize(size)
-	if err != nil {
-		return bytesUploaded, err
 	}
 
 	// Get number of parts to generate next number
@@ -270,77 +263,30 @@ func (store S3Store) WriteChunk(id string, offset int64, src io.Reader) (int64, 
 	numParts := len(parts)
 	nextPartNum := int64(numParts + 1)
 
-	incompletePartSize := int64(0)
-	incompletePart, err := store.getIncompletePartForUpload(uploadId)
+	incompleteUploadFile, err := store.downloadIncompletePartForUpload(uploadId)
+	if err != nil {
+		return 0, err
+	}
+	if incompleteUploadFile != nil {
+		defer incompleteUploadFile.Close()
+		defer os.Remove(incompleteUploadFile.Name())
+		src = io.MultiReader(incompleteUploadFile, src)
+	}
+
+	optimalPartSize, err := store.calcOptimalPartSize(info.Size)
 	if err != nil {
 		return 0, err
 	}
 
-	if incompletePart != nil {
-		src = io.MultiReader(incompletePart.Body, src)
-		incompletePartSize = *incompletePart.ContentLength
-		defer incompletePart.Body.Close()
-	}
+	fileBufferSize := 5
+	fileChan := make(chan *os.File, fileBufferSize)
+	bytesWrittenChan := make(chan int64)
+	errChan := make(chan error, 2)
 
-	for {
-		// Create a temporary file to store the part in it
-		file, err := ioutil.TempFile("", "tusd-s3-tmp-")
-		if err != nil {
-			return bytesUploaded, err
-		}
-		defer os.Remove(file.Name())
-		defer file.Close()
+	go generateParts(src, optimalPartSize, fileChan, errChan)
+	go store.processParts(id, info, nextPartNum, fileChan, bytesWrittenChan, errChan)
 
-		limitedReader := io.LimitReader(src, optimalPartSize)
-		n, err := io.Copy(file, limitedReader)
-		// io.Copy does not return io.EOF, so we not have to handle it differently.
-		if err != nil {
-			return bytesUploaded, err
-		}
-		// If io.Copy is finished reading, it will always return (0, nil).
-		if n == 0 {
-			return (bytesUploaded - incompletePartSize), nil
-		}
-
-		isFinalChunk := !info.SizeIsDeferred && (size-offset == n)
-		if n >= store.MinPartSize || isFinalChunk {
-			// In order to keep the upload in a consistent state, we delete the partial object
-			// (if any) from S3 before appending it to the multi-part upload.
-			if incompletePart != nil {
-				if err := store.deleteIncompletePartForUpload(uploadId); err != nil {
-					return bytesUploaded, err
-				}
-
-				incompletePart = nil
-			}
-
-			// Seek to the beginning of the file
-			file.Seek(0, 0)
-
-			_, err = store.Service.UploadPart(&s3.UploadPartInput{
-				Bucket:     aws.String(store.Bucket),
-				Key:        store.keyWithPrefix(uploadId),
-				UploadId:   aws.String(multipartId),
-				PartNumber: aws.Int64(nextPartNum),
-				Body:       file,
-			})
-			if err != nil {
-				return bytesUploaded, err
-			}
-		} else {
-			if err := store.putIncompletePartForUpload(uploadId, file); err != nil {
-				return bytesUploaded, err
-			}
-
-			bytesUploaded += n
-
-			return (bytesUploaded - incompletePartSize), nil
-		}
-
-		offset += n
-		bytesUploaded += n
-		nextPartNum += 1
-	}
+	return <-bytesWrittenChan, <-errChan
 }
 
 func (store S3Store) GetInfo(id string) (info tusd.FileInfo, err error) {
@@ -651,6 +597,37 @@ func (store S3Store) deleteIncompletePartForUpload(id string) error {
 		},
 	})
 	return err
+}
+
+func (store S3Store) downloadIncompletePartForUpload(uploadId string) (*os.File, error) {
+	incompleteUploadObject, err := store.getIncompletePartForUpload(uploadId)
+	if err != nil {
+		return nil, err
+	}
+	if incompleteUploadObject == nil {
+		// We did not find an incomplete upload
+		return nil, nil
+	}
+	defer incompleteUploadObject.Body.Close()
+
+	partFile, err := ioutil.TempFile("", "tusd-s3-tmp-")
+	if err != nil {
+		return nil, err
+	}
+
+	n, err := io.Copy(partFile, incompleteUploadObject.Body)
+	if err != nil {
+		return nil, err
+	}
+	if n < *incompleteUploadObject.ContentLength {
+		return nil, errors.New("short read of incomplete upload")
+	}
+
+	if err := store.deleteIncompletePartForUpload(uploadId); err != nil {
+		return nil, err
+	}
+
+	return partFile, nil
 }
 
 func splitIds(id string) (uploadId, multipartId string) {
