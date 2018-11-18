@@ -145,6 +145,13 @@ type S3Store struct {
 	// are stored in S3. This mechanism can be used to create an expiration policy
 	// to remove incomplete objects after a period of time.
 	IncompletePartTag string
+	// PartFileBufferSize is the number of parts that can be buffered on disk
+	// before being uploaded to S3. The size of each part is determined by
+	// calcOptimalPartSizeconstrained and is bounded by MixPartSize and
+	// MaxPartSize. A larger buffer size can reduce the effect of S3 latency
+	// and increase throughput from the client, but at the cost of increased
+	// disk space usage.
+	PartFileBufferSize int
 }
 
 type S3API interface {
@@ -163,13 +170,14 @@ type S3API interface {
 // New constructs a new storage using the supplied bucket and service object.
 func New(bucket string, service S3API) S3Store {
 	return S3Store{
-		Bucket:            bucket,
-		Service:           service,
-		MaxPartSize:       5 * 1024 * 1024 * 1024,
-		MinPartSize:       5 * 1024 * 1024,
-		MaxMultipartParts: 10000,
-		MaxObjectSize:     5 * 1024 * 1024 * 1024 * 1024,
-		IncompletePartTag: "TusIncompletePart=true",
+		Bucket:             bucket,
+		Service:            service,
+		MaxPartSize:        5 * 1024 * 1024 * 1024,
+		MinPartSize:        5 * 1024 * 1024,
+		MaxMultipartParts:  10000,
+		MaxObjectSize:      5 * 1024 * 1024 * 1024 * 1024,
+		IncompletePartTag:  "TusIncompletePart=true",
+		PartFileBufferSize: 0,
 	}
 }
 
@@ -278,8 +286,7 @@ func (store S3Store) WriteChunk(id string, offset int64, src io.Reader) (int64, 
 		return 0, err
 	}
 
-	fileBufferSize := 5
-	fileChan := make(chan *os.File, fileBufferSize)
+	fileChan := make(chan *os.File, store.PartFileBufferSize)
 	bytesWrittenChan := make(chan int64)
 	errChan := make(chan error, 2)
 
