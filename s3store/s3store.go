@@ -88,10 +88,12 @@ import (
 	"fmt"
 	"io"
 	"io/ioutil"
+	"log"
 	"os"
 	"regexp"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/tus/tusd"
 	"github.com/tus/tusd/uid"
@@ -160,11 +162,64 @@ type S3API interface {
 	UploadPartCopy(input *s3.UploadPartCopyInput) (*s3.UploadPartCopyOutput, error)
 }
 
+type S3APITimer struct {
+	realStore S3API
+}
+
+func newS3APITimer(s S3API) S3APITimer {
+	return S3APITimer{realStore: s}
+}
+func (s S3APITimer) PutObject(input *s3.PutObjectInput) (*s3.PutObjectOutput, error) {
+	defer trackExecutionTime(time.Now(), "PutObject")
+	return s.realStore.PutObject(input)
+}
+func (s S3APITimer) ListParts(input *s3.ListPartsInput) (*s3.ListPartsOutput, error) {
+	defer trackExecutionTime(time.Now(), "ListParts")
+	return s.realStore.ListParts(input)
+}
+func (s S3APITimer) UploadPart(input *s3.UploadPartInput) (*s3.UploadPartOutput, error) {
+	defer trackExecutionTime(time.Now(), "UploadPart")
+	return s.realStore.UploadPart(input)
+}
+func (s S3APITimer) HeadObject(input *s3.HeadObjectInput) (*s3.HeadObjectOutput, error) {
+	defer trackExecutionTime(time.Now(), "HeadObject")
+	return s.realStore.HeadObject(input)
+}
+func (s S3APITimer) GetObject(input *s3.GetObjectInput) (*s3.GetObjectOutput, error) {
+	defer trackExecutionTime(time.Now(), "GetObject")
+	return s.realStore.GetObject(input)
+}
+func (s S3APITimer) CreateMultipartUpload(input *s3.CreateMultipartUploadInput) (*s3.CreateMultipartUploadOutput, error) {
+	defer trackExecutionTime(time.Now(), "CompleteMultipartUpload")
+	return s.realStore.CreateMultipartUpload(input)
+}
+func (s S3APITimer) AbortMultipartUpload(input *s3.AbortMultipartUploadInput) (*s3.AbortMultipartUploadOutput, error) {
+	defer trackExecutionTime(time.Now(), "AbortMultipartUpload")
+	return s.realStore.AbortMultipartUpload(input)
+}
+func (s S3APITimer) DeleteObjects(input *s3.DeleteObjectsInput) (*s3.DeleteObjectsOutput, error) {
+	defer trackExecutionTime(time.Now(), "DeleteObjects")
+	return s.realStore.DeleteObjects(input)
+}
+func (s S3APITimer) CompleteMultipartUpload(input *s3.CompleteMultipartUploadInput) (*s3.CompleteMultipartUploadOutput, error) {
+	defer trackExecutionTime(time.Now(), "CompleteMultipartUpload")
+	return s.realStore.CompleteMultipartUpload(input)
+}
+func (s S3APITimer) UploadPartCopy(input *s3.UploadPartCopyInput) (*s3.UploadPartCopyOutput, error) {
+	defer trackExecutionTime(time.Now(), "UploadPartCopy")
+	return s.realStore.UploadPartCopy(input)
+}
+
+func trackExecutionTime(start time.Time, name string) {
+	elapsed := time.Since(start)
+	log.Printf("%s took %s", name, elapsed)
+}
+
 // New constructs a new storage using the supplied bucket and service object.
 func New(bucket string, service S3API) S3Store {
 	return S3Store{
 		Bucket:            bucket,
-		Service:           service,
+		Service:           newS3APITimer(service),
 		MaxPartSize:       5 * 1024 * 1024 * 1024,
 		MinPartSize:       5 * 1024 * 1024,
 		MaxMultipartParts: 10000,
