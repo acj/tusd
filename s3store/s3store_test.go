@@ -594,10 +594,10 @@ func TestWriteChunkWithUnexpectedEOF(t *testing.T) {
 				},
 			},
 		}, nil),
-		s3obj.EXPECT().HeadObject(&s3.HeadObjectInput{
+		s3obj.EXPECT().GetObject(&s3.GetObjectInput{
 			Bucket: aws.String("bucket"),
 			Key:    aws.String("uploadId.part"),
-		}).Return(&s3.HeadObjectOutput{}, awserr.New("NoSuchKey", "Not found", nil)),
+		}).Return(&s3.GetObjectOutput{}, awserr.New("NoSuchKey", "Not found", nil)),
 		s3obj.EXPECT().ListParts(&s3.ListPartsInput{
 			Bucket:           aws.String("bucket"),
 			Key:              aws.String("uploadId"),
@@ -754,8 +754,9 @@ func TestWriteChunkPrependsIncompletePart(t *testing.T) {
 						Key: aws.String("uploadId.part"),
 					},
 				},
+				Quiet: aws.Bool(true),
 			},
-		}).Return(nil, nil),
+		}).Return(&s3.DeleteObjectsOutput{}, nil),
 		s3obj.EXPECT().UploadPart(NewUploadPartInputMatcher(&s3.UploadPartInput{
 			Bucket:     aws.String("bucket"),
 			Key:        aws.String("uploadId"),
@@ -830,8 +831,9 @@ func TestWriteChunkPrependsIncompletePartAndWritesANewIncompletePart(t *testing.
 						Key: aws.String("uploadId.part"),
 					},
 				},
+				Quiet: aws.Bool(true),
 			},
-		}).Return(nil, nil),
+		}).Return(&s3.DeleteObjectsOutput{}, nil),
 		s3obj.EXPECT().UploadPart(NewUploadPartInputMatcher(&s3.UploadPartInput{
 			Bucket:     aws.String("bucket"),
 			Key:        aws.String("uploadId"),
