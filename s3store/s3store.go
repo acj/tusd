@@ -652,7 +652,7 @@ func (store S3Store) putIncompletePartForUpload(uploadId string, r io.ReadSeeker
 }
 
 func (store S3Store) deleteIncompletePartForUpload(uploadId string) error {
-	_, err := store.Service.DeleteObjects(&s3.DeleteObjectsInput{
+	res, err := store.Service.DeleteObjects(&s3.DeleteObjectsInput{
 		Bucket: aws.String(store.Bucket),
 		Delete: &s3.Delete{
 			Objects: []*s3.ObjectIdentifier{
@@ -660,9 +660,26 @@ func (store S3Store) deleteIncompletePartForUpload(uploadId string) error {
 					Key: store.keyWithPrefix(uploadId + ".part"),
 				},
 			},
+			Quiet: aws.Bool(true),
 		},
 	})
-	return err
+	if err != nil {
+		return err
+	}
+
+	errs := make([]error, 0, 3)
+	for _, s3Err := range res.Errors {
+		if *s3Err.Code != "NoSuchKey" {
+			errs = append(errs, fmt.Errorf("AWS S3 Error (%s) for object %s: %s", *s3Err.Code, *s3Err.Key, *s3Err.Message))
+		}
+	}
+
+	if len(errs) > 0 {
+		errs = append(errs, errors.New("If you are using a versioned S3 bucket, please verify that you have granted both s3:DeleteObject and s3:DeleteObjectVersion permissions"))
+		return newMultiError(errs)
+	}
+
+	return nil
 }
 
 func splitIds(id string) (uploadId, multipartId string) {
