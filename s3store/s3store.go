@@ -11,6 +11,9 @@
 // 	s3:ListMultipartUploadParts
 // 	s3:PutObject
 //
+// If the S3 bucket has object versioning enabled, then the user must also have
+// the s3:DeleteObjectVersion permission.
+//
 // While this package uses the official AWS SDK for Go, S3Store is able
 // to work with any S3-compatible service such as Riak CS. In order to change
 // the HTTP endpoint used for sending requests to, consult the AWS Go SDK
