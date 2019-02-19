@@ -746,17 +746,10 @@ func TestWriteChunkPrependsIncompletePart(t *testing.T) {
 			ContentLength: aws.Int64(3),
 			Body:          ioutil.NopCloser(bytes.NewReader([]byte("123"))),
 		}, nil),
-		s3obj.EXPECT().DeleteObjects(&s3.DeleteObjectsInput{
+		s3obj.EXPECT().DeleteObject(&s3.DeleteObjectInput{
 			Bucket: aws.String(store.Bucket),
-			Delete: &s3.Delete{
-				Objects: []*s3.ObjectIdentifier{
-					{
-						Key: aws.String("uploadId.part"),
-					},
-				},
-				Quiet: aws.Bool(true),
-			},
-		}).Return(&s3.DeleteObjectsOutput{}, nil),
+			Key:    aws.String("uploadId.part"),
+		}).Return(&s3.DeleteObjectOutput{}, nil),
 		s3obj.EXPECT().UploadPart(NewUploadPartInputMatcher(&s3.UploadPartInput{
 			Bucket:     aws.String("bucket"),
 			Key:        aws.String("uploadId"),
@@ -823,17 +816,10 @@ func TestWriteChunkPrependsIncompletePartAndWritesANewIncompletePart(t *testing.
 			Body:          ioutil.NopCloser(bytes.NewReader([]byte("123"))),
 			ContentLength: aws.Int64(3),
 		}, nil),
-		s3obj.EXPECT().DeleteObjects(&s3.DeleteObjectsInput{
+		s3obj.EXPECT().DeleteObject(&s3.DeleteObjectInput{
 			Bucket: aws.String(store.Bucket),
-			Delete: &s3.Delete{
-				Objects: []*s3.ObjectIdentifier{
-					{
-						Key: aws.String("uploadId.part"),
-					},
-				},
-				Quiet: aws.Bool(true),
-			},
-		}).Return(&s3.DeleteObjectsOutput{}, nil),
+			Key:    aws.String("uploadId.part"),
+		}).Return(&s3.DeleteObjectOutput{}, nil),
 		s3obj.EXPECT().UploadPart(NewUploadPartInputMatcher(&s3.UploadPartInput{
 			Bucket:     aws.String("bucket"),
 			Key:        aws.String("uploadId"),
